@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,79 +10,199 @@
             text-align: center;
             padding: 20px;
             background-color: #f4f4f4;
+            margin: 0;
+        }
+        h1, h2 {
+            color: #333;
         }
         h1 {
-            color: #333;
             font-size: 32px;
+            margin-bottom: 0;
+        }
+        h2 {
+            font-size: 20px;
+            margin-top: 5px;
         }
         input, button {
             padding: 10px;
             margin: 10px;
             font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
         }
         #result {
             margin-top: 20px;
             font-size: 18px;
         }
+        table {
+            width: 90%;
+            margin: 20px auto;
+            border-collapse: collapse;
+            background: #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: right;
+        }
+        th {
+            background-color: #f2f2f2;
+            color: #333;
+        }
+        .support {
+            margin-top: 30px;
+        }
+        .support button {
+            background-color: #008CBA;
+        }
+        .support button:hover {
+            background-color: #007B9A;
+        }
     </style>
 </head>
 <body>
-    <h1>Nanotracker Free Money System #FMS</h1>
-    <p>Gib deine Nano-Wallet-Adresse ein:</p>
-    <input type="text" id="walletAddress" placeholder="nano_...">
-    <button onclick="getWalletBalance()">Check Balance</button>
+    <h1>NanoTracker</h1>
+    <h2>Free Money System #FMS</h2>
+    <p>Enter your Nano wallet address:</p>
+    <input type="text" id="walletAddress" placeholder="nano_..." size="50">
+    <button onclick="showValue()">Show Value</button>
     <div id="result"></div>
-    
+
+    <div class="support">
+        <p>Support this project:</p>
+        <button onclick="copyFMSAddress()">Copy FMS Wallet Address</button>
+        <p id="fmsAddress">nano_1iafhemp4akm7s1sd3co4q8na9az6krrc6367u11j7zjj897675njqngng1i</p>
+    </div>
+
     <script>
-        async function getWalletBalance() {
+        async function showValue() {
             const wallet = document.getElementById("walletAddress").value.trim();
             if (!wallet.startsWith("nano_")) {
-                alert("Bitte eine gültige Nano-Adresse eingeben!");
+                alert("Please enter a valid Nano wallet address!");
                 return;
             }
-            
-            document.getElementById("result").innerHTML = "Lade Daten...";
-            
+
+            document.getElementById("result").innerHTML = "<p>Loading data...</p>";
+
             try {
-                // Nano RPC API für Wallet-Saldo
-                const nanoResponse = await fetch(`https://api.nanocrawler.cc/v2/accounts/${wallet}`);
-                const nanoData = await nanoResponse.json();
-                const balanceRaw = nanoData.balance || "0";
-                const balanceNano = parseFloat(balanceRaw) / 10 ** 30;
-                
-                // Fiat-Währungsumrechnung über Coingecko API
-                const priceResponse = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=nano&vs_currencies=usd,eur,btc,xrp,tzs");
+                // Fetch wallet history from nano.community
+                const historyResponse = await fetch(`https://nano.community/api/account/${wallet}/history?limit=100`);
+                if (!historyResponse.ok) throw new Error("Failed to fetch wallet history from nano.community");
+
+                const historyData = await historyResponse.json();
+                const transactions = historyData.history || [];
+
+                // Fetch current prices from CoinGecko
+                const priceResponse = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=nano&vs_currencies=usd,eur,tzs,btc,xrp");
+                if (!priceResponse.ok) throw new Error("Failed to fetch price data from CoinGecko");
+
                 const priceData = await priceResponse.json();
-                
-                const priceUSD = priceData.nano.usd;
-                const priceEUR = priceData.nano.eur;
-                const priceBTC = priceData.nano.btc;
-                const priceXRP = priceData.nano.xrp;
-                const priceTSH = priceData.nano.tzs;
-                
-                const balanceUSD = (balanceNano * priceUSD).toFixed(2);
-                const balanceEUR = (balanceNano * priceEUR).toFixed(2);
-                const balanceBTC = (balanceNano * priceBTC).toFixed(8);
-                const balanceXRP = (balanceNano * priceXRP).toFixed(2);
-                const balanceTSH = (balanceNano * priceTSH).toFixed(0);
-                
-                // Ergebnis anzeigen
+                const prices = {
+                    usd: priceData.nano.usd || 0,
+                    eur: priceData.nano.eur || 0,
+                    tsh: priceData.nano.tzs || 0,
+                    btc: priceData.nano.btc || 0,
+                    xrp: priceData.nano.xrp || 0
+                };
+
+                // Calculate current balance and transaction data
+                let totalXNO = 0;
+                let totalCost = 0;
+                let transactionCount = 0;
+
+                const tableRows = transactions.map(tx => {
+                    const amount = parseFloat(tx.amount) / 10 ** 30; // Convert from raw to XNO
+                    const isReceive = tx.type === "receive";
+                    totalXNO += isReceive ? amount : -amount;
+                    if (isReceive) {
+                        totalCost += amount * prices.usd; // Assuming purchase price in USD at current rate for simplicity
+                        transactionCount++;
+                    }
+
+                    const date = new Date(tx.local_timestamp * 1000).toLocaleDateString();
+                    const avgCostPerXNO = transactionCount > 0 ? totalCost / transactionCount : 0;
+                    const currentValue = amount * prices.usd;
+                    const profitLossPercent = avgCostPerXNO > 0 ? ((currentValue - (amount * avgCostPerXNO)) / (amount * avgCostPerXNO) * 100).toFixed(2) : 0;
+
+                    return `
+                        <tr>
+                            <td>${date}</td>
+                            <td>${amount.toFixed(6)}</td>
+                            <td>${avgCostPerXNO.toFixed(2)}</td>
+                            <td style="color: ${profitLossPercent >= 0 ? 'green' : 'red'}">${profitLossPercent}%</td>
+                            <td>$${currentValue.toFixed(2)}</td>
+                            <td>€${(amount * prices.eur).toFixed(2)}</td>
+                            <td>${(amount * prices.tsh).toFixed(0)} TZS</td>
+                            <td>${(amount * prices.btc).toFixed(8)} BTC</td>
+                            <td>${(amount * prices.xrp).toFixed(2)} XRP</td>
+                        </tr>
+                    `;
+                }).join("");
+
+                // Current balance row
+                const avgCost = totalCost / (transactionCount > 0 ? totalXNO : 1);
+                const currentValue = totalXNO * prices.usd;
+                const currentProfitLoss = avgCost > 0 ? ((currentValue - (totalXNO * avgCost)) / (totalXNO * avgCost) * 100).toFixed(2) : 0;
+
+                const currentRow = `
+                    <tr style="font-weight: bold; background-color: #f9f9f9;">
+                        <td>${new Date().toLocaleDateString()}</td>
+                        <td>${totalXNO.toFixed(6)}</td>
+                        <td>${avgCost.toFixed(2)}</td>
+                        <td style="color: ${currentProfitLoss >= 0 ? 'green' : 'red'}">${currentProfitLoss}%</td>
+                        <td>$${currentValue.toFixed(2)}</td>
+                        <td>€${(totalXNO * prices.eur).toFixed(2)}</td>
+                        <td>${(totalXNO * prices.tsh).toFixed(0)} TZS</td>
+                        <td>${(totalXNO * prices.btc).toFixed(8)} BTC</td>
+                        <td>${(totalXNO * prices.xrp).toFixed(2)} XRP</td>
+                    </tr>
+                `;
+
+                // Display table
                 document.getElementById("result").innerHTML = `
                     <h3>Wallet: ${wallet}</h3>
-                    <p>Saldo: <strong>${balanceNano.toFixed(6)} XNO</strong></p>
-                    <p>Wert in Fiat & Crypto:</p>
-                    <ul>
-                        <li>USD: $${balanceUSD}</li>
-                        <li>EUR: €${balanceEUR}</li>
-                        <li>BTC: ${balanceBTC} BTC</li>
-                        <li>XRP: ${balanceXRP} XRP</li>
-                        <li>TSH: ${balanceTSH} TZS</li>
-                    </ul>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>XNO Amount</th>
+                                <th>Avg Cost (USD)</th>
+                                <th>Profit/Loss (%)</th>
+                                <th>USD</th>
+                                <th>EUR</th>
+                                <th>TSH</th>
+                                <th>BTC</th>
+                                <th>XRP</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                            ${currentRow}
+                        </tbody>
+                    </table>
                 `;
             } catch (error) {
-                document.getElementById("result").innerHTML = "Fehler beim Abrufen der Daten.";
-                console.error(error);
+                document.getElementById("result").innerHTML = `<p>Error: ${error.message}</p>`;
+                console.error("Error details:", error);
             }
+        }
+
+        function copyFMSAddress() {
+            const fmsAddress = "nano_1iafhemp4akm7s1sd3co4q8na9az6krrc6367u11j7zjj897675njqngng1i";
+            navigator.clipboard.writeText(fmsAddress).then(() => {
+                alert("FMS Wallet Address copied to clipboard!");
+            }).catch(err => {
+                alert("Failed to copy address: " + err);
+            });
         }
     </script>
 </body>
